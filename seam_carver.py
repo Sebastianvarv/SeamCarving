@@ -1,6 +1,21 @@
 import numpy as np
 import cv2
 
+POS_MASK = 100000
+NEG_MASK = -100
+
+
+def generate_mask(start_x, start_y, end_x, end_y, img, is_pos):
+    width, height = img.size
+    mask = np.ones((height, width))
+
+    if is_pos:
+        mask[start_y:(end_y + 1), start_x:(end_x + 1)] *= POS_MASK
+    else:
+        mask[start_y:(end_y + 1), start_x:(end_x + 1)] *= NEG_MASK
+
+    return mask
+
 
 def filter_output(b, g, r, kernel):
     output = np.absolute(cv2.filter2D(b, -1, kernel=kernel)) + \
@@ -73,11 +88,12 @@ def rotate_image(image, ccw):
 
 
 class SeamCarver:
-    def __init__(self, file_path, out_height, out_width):
+    def __init__(self, file_path, out_height, out_width, mask):
         # initialize parameter
         self.file_path = file_path
         self.out_height = out_height
         self.out_width = out_width
+        self.mask = mask
 
         # read in image and store as np.float64 format
         self.in_image = cv2.imread(file_path).astype(np.float64)
@@ -158,7 +174,7 @@ class SeamCarver:
     def calc_energy_map(self):
         """
         Calculate energy map for the whole image for each color channel.  The energy of pixel (x, y) is
-        Δx2(x, y) + Δy2(x, y), where the square of the x-gradient Δx2(x, y) = Rx(x, y)2 + Gx(x, y)2 + Bx(x, y)2,
+        dx2(x, y) + dy2(x, y), where the square of the x-gradient dx2(x, y) = Rx(x, y)2 + Gx(x, y)2 + Bx(x, y)2,
         and where the central differences Rx(x, y), Gx(x, y), and Bx(x, y) are the absolute value in differences of
         red, green, and blue components between pixel (x + 1, y) and pixel (x − 1, y).
         :return: Matrix m x n where m is height of the image and n is width. Each value at (x,y) corresponds to pixel
