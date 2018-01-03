@@ -104,8 +104,8 @@ class Gui(Frame):
     def on_button_press(self, event):
         if self.im:
             # save mouse drag start position
-            self.start_x = self.canvas.canvasx(event.x)
-            self.start_y = self.canvas.canvasy(event.y)
+            self.start_x = int(self.canvas.canvasx(event.x))
+            self.start_y = int(self.canvas.canvasy(event.y))
 
             # create rectangle if not yet exist
             if not self.rect:
@@ -131,19 +131,20 @@ class Gui(Frame):
 
     def on_button_release(self, event):
         if self.im:
-            self.end_x = self.canvas.canvasx(event.x)
-            self.end_y = self.canvas.canvasx(event.y)
+            self.end_x = int(self.canvas.canvasx(event.x))
+            self.end_y = int(self.canvas.canvasx(event.y))
 
     def start_process(self):
         width, height, option = self.width_value.get(), self.height_value.get(), self.radio_value.get()
         if width.isnumeric() and height.isnumeric() and option in {0, 1, 2}:
+            width, height, option = int(width), int(height), int(option)
             mask = None
             if option == 1:  # Remove selection
                 mask = generate_mask(self.start_x, self.start_y, self.end_x, self.end_y, self.im, False)
             elif option == 2:  # Protect selection
                 mask = generate_mask(self.start_x, self.start_y, self.end_x, self.end_y, self.im, True)
 
-            carver = SeamCarver(self.img_path, height, width, mask)
+            carver = SeamCarver(self.img_path, int(height), int(width), mask)
             output_filename = self.out_file_name.get()
             if output_filename != "":
                 carver.save_result(output_filename)
@@ -152,7 +153,6 @@ class Gui(Frame):
 
         else:
             messagebox.showinfo("Oops", "Output dimensions must be numerical!")
-
 
 
 if __name__ == "__main__":

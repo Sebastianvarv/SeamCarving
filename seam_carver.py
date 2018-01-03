@@ -9,6 +9,12 @@ def generate_mask(start_x, start_y, end_x, end_y, img, is_pos):
     width, height = img.size
     mask = np.ones((height, width))
 
+    if start_x > end_x:
+        start_x, end_x = end_x, start_x
+
+    if start_y > end_y:
+        start_y, end_y = end_y, start_y
+
     if is_pos:
         mask[start_y:(end_y + 1), start_x:(end_x + 1)] *= POS_MASK
     else:
