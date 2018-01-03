@@ -182,15 +182,17 @@ class SeamCarver:
         output = np.copy(energy_map)
         for row in range(1, height):
             for col in range(width):
-                e_right = output[row - 1, col + 1] + matrix_x[row - 1, col + 1] + matrix_y_right[row - 1, col + 1]
                 e_up = output[row - 1, col] + matrix_x[row - 1, col]
-                e_left = output[row - 1, col - 1] + matrix_x[row - 1, col - 1] + matrix_y_left[row - 1, col - 1]
 
                 if col == 0:
+                    e_right = output[row - 1, col + 1] + matrix_x[row - 1, col + 1] + matrix_y_right[row - 1, col + 1]
                     output[row, col] = energy_map[row, col] + min(e_right, e_up)
                 elif col == width - 1:
+                    e_left = output[row - 1, col - 1] + matrix_x[row - 1, col - 1] + matrix_y_left[row - 1, col - 1]
                     output[row, col] = energy_map[row, col] + min(e_left, e_up)
                 else:
+                    e_left = output[row - 1, col - 1] + matrix_x[row - 1, col - 1] + matrix_y_left[row - 1, col - 1]
+                    e_right = output[row - 1, col + 1] + matrix_x[row - 1, col + 1] + matrix_y_right[row - 1, col + 1]
                     output[row, col] = energy_map[row, col] + min(e_left, e_right, e_up)
         return output
 
