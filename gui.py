@@ -144,15 +144,15 @@ class Gui(Frame):
             elif option == 2:  # Protect selection
                 mask = generate_mask(self.start_x, self.start_y, self.end_x, self.end_y, self.im, True)
 
-            carver = SeamCarver(self.img_path, int(height), int(width), mask)
             output_filename = self.out_file_name.get()
-            if output_filename != "":
-                carver.save_result(output_filename)
-            else:
-                carver.save_result("output.jpg")
+            carver = SeamCarver(self.img_path, int(height), int(width), mask)
+            if output_filename == "":
+                output_filename = "output.jpg"
+            carver.save_result(output_filename)
+            messagebox.showinfo("Done", "Image resizing complete, file saved in " + output_filename)
 
         else:
-            messagebox.showinfo("Oops", "Output dimensions must be numerical!")
+            messagebox.showwarning("Oops", "Output dimensions must be numerical!")
 
 
 if __name__ == "__main__":

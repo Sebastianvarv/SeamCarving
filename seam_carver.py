@@ -1,5 +1,6 @@
-import numpy as np
 import cv2
+import numpy as np
+from scipy.ndimage import generic_gradient_magnitude, sobel
 
 POS_MASK = 100000
 NEG_MASK = -100
@@ -93,6 +94,72 @@ def rotate_image(image, ccw):
     return output
 
 
+def find_horizontal_seam(energy_matrix):
+
+    """
+    Takes a img and returns the lowest energy vertical seam as a list of pixels (2-tuples).
+    This implements the dynamic programming seam-find algorithm. For an m*n picture, this algorithm
+    takes O(m*n) time
+    @im: a grayscale image
+    """
+
+    im_height, im_width = energy_matrix.shape
+
+    cost = np.zeros((im_height, im_width))
+
+    im_arr = np.copy(energy_matrix)
+
+    for y in range(im_width):
+        cost[0, y] = im_arr[0, y]
+
+    for x in range(1, im_height):
+        for y in range(im_width):
+            if y == 0:
+                min_val = min(cost[x - 1, y], cost[x - 1, y + 1])
+            elif y < im_width - 2:
+                min_val = min(cost[x - 1, y], cost[x - 1, y + 1])
+                min_val = min(min_val, cost[x - 1, y - 1])
+            else:
+                min_val = min(cost[x - 1, y], cost[x - 1, y - 1])
+            cost[x, y] = im_arr[x, y] + min_val
+
+    min_val = 1e1000
+    path = []
+
+    for y in range(im_width):
+        if cost[im_height - 1, y] < min_val:
+            min_val = cost[im_height - 1, y]
+            min_ptr = y
+
+    pos = (im_height - 1, min_ptr)
+    path.append(pos)
+
+    while pos[0] != 0:
+        val = cost[pos] - im_arr[pos]
+        x, y = pos
+        if y == 0:
+            if val == cost[x - 1, y + 1]:
+                pos = (x - 1, y + 1)
+            else:
+                pos = (x - 1, y)
+        elif y < im_width - 2:
+            if val == cost[x - 1, y + 1]:
+                pos = (x - 1, y + 1)
+            elif val == cost[x - 1, y]:
+                pos = (x - 1, y)
+            else:
+                pos = (x - 1, y - 1)
+        else:
+            if val == cost[x - 1, y]:
+                pos = (x - 1, y)
+            else:
+                pos = (x - 1, y - 1)
+
+        path.append(pos)
+
+    return path
+
+
 class SeamCarver:
     def __init__(self, file_path, out_height, out_width, mask):
         # initialize parameter
@@ -149,10 +216,10 @@ class SeamCarver:
         :param num_pixel: number of pixels (width) to remove
         """
         for p in range(num_pixel):
-            energy_matrix = self.calc_energy_map()
-            cost_matrix = self.cumulative_map_forward(energy_matrix)
-            seam_idx = find_seam(cost_matrix)
-            self.delete_seam(seam_idx)
+            energy_matrix = self.gradient_filter()
+            alt_seam = find_horizontal_seam(energy_matrix)
+            output = self.delete_seam(alt_seam)
+            self.out_image = output
 
     def seams_insertion(self, num_pixel):
         """
@@ -168,7 +235,7 @@ class SeamCarver:
             cumulative_map = cumulative_map_backward(energy_map)
             seam_idx = find_seam(cumulative_map)
             seams_record.append(seam_idx)
-            self.delete_seam(seam_idx)
+            self.delete_seam_old(seam_idx)
 
         self.out_image = np.copy(temp_image)
         n = len(seams_record)
@@ -191,6 +258,18 @@ class SeamCarver:
         g_energy = np.absolute(cv2.Scharr(g, -1, 1, 0)) + np.absolute(cv2.Scharr(g, -1, 0, 1))
         r_energy = np.absolute(cv2.Scharr(r, -1, 1, 0)) + np.absolute(cv2.Scharr(r, -1, 0, 1))
         return b_energy + g_energy + r_energy
+
+    def gradient_filter(self):
+
+        """
+        Takes a grayscale img and retuns the Sobel operator on the image. Fast thanks to Scipy/Numpy. See slow_gradient_filter for
+        an implementation of what the Sobel operator is doing
+        @im: a grayscale image represented in floats
+        """
+        im_height, im_width, _ = self.out_image.shape
+        sobel_arr = generic_gradient_magnitude(self.out_image, derivative=sobel)
+        gradient_sum = np.sum(sobel_arr, axis=2)
+        return gradient_sum
 
     def cumulative_map_forward(self, energy_map):
         """
@@ -230,6 +309,13 @@ class SeamCarver:
         return mat_x, mat_y_l, mar_y_r
 
     def delete_seam(self, seam_idx):
+        height, width, dim = self.out_image.shape
+        output = np.zeros((height, width-1, dim))
+        for h, w in seam_idx:
+            output[h] = np.delete(self.out_image[h], w, 0)
+        return output
+
+    def delete_seam_old(self, seam_idx):
         """
         Delete seam from the image in order to reduce image dimensionality
         :param seam_idx: List of pixels containing a seam to remove
