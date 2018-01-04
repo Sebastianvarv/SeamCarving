@@ -136,7 +136,7 @@ class Gui(Frame):
 
     def start_process(self):
         width, height, option = self.width_value.get(), self.height_value.get(), self.radio_value.get()
-        if width.isnumeric() and height.isnumeric() and option in {0, 1, 2}:
+        if is_number(width) and is_number(height) and option in {0, 1, 2}:
             width, height, option = int(width), int(height), int(option)
             mask = None
             if option == 1:  # Remove selection
@@ -150,10 +150,15 @@ class Gui(Frame):
                 output_filename = "output.jpg"
             carver.save_result(output_filename)
             messagebox.showinfo("Done", "Image resizing complete, file saved in " + output_filename)
-
         else:
-            messagebox.showwarning("Oops", "Output dimensions must be numerical!")
+            messagebox.showwarning("Oops", "Output dimensions must be integers!")
 
+def is_number(s):
+        try:
+            int(s)
+            return True
+        except ValueError:
+            return False
 
 if __name__ == "__main__":
     root = Tk()

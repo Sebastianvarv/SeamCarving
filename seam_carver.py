@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 import cv2
 import numpy as np
 from scipy.ndimage import generic_gradient_magnitude, sobel
@@ -161,7 +163,7 @@ def find_horizontal_seam(energy_matrix):
 
 
 class SeamCarver:
-    def __init__(self, file_path, out_height, out_width, mask):
+    def __init__(self, file_path, out_height, out_width, mask=None):
         # initialize parameter
         self.file_path = file_path
         self.out_height = out_height
