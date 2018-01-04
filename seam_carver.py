@@ -26,55 +26,6 @@ def generate_mask(start_x, start_y, end_x, end_y, img, is_pos):
     return mask
 
 
-def filter_output(b, g, r, kernel):
-    output = np.absolute(cv2.filter2D(b, -1, kernel=kernel)) + \
-             np.absolute(cv2.filter2D(g, -1, kernel=kernel)) + \
-             np.absolute(cv2.filter2D(r, -1, kernel=kernel))
-    return output
-
-
-def cumulative_map_backward(energy_map):
-    height, width = energy_map.shape
-    output = np.copy(energy_map)
-    for row in range(1, height):
-        for col in range(width):
-            output[row, col] = \
-                energy_map[row, col] + np.amin(output[row - 1, max(col - 1, 0): min(col + 2, width - 1)])
-    return output
-
-
-def find_seam(cumulative_map):
-    """
-    Find minimal cost seam using cumulative map using greedy algorithm
-    :param cumulative_map: Cumulative cost matrix
-    :return: Seam which is list of pixels
-    """
-    height, width = cumulative_map.shape
-    output = np.zeros((height,), dtype=np.uint32)
-    output[-1] = np.argmin(cumulative_map[-1])
-    for row in range(height - 2, -1, -1):
-        prv_x = output[row + 1]
-        if prv_x == 0:
-            output[row] = np.argmin(cumulative_map[row, : 2])
-        else:
-            output[row] = np.argmin(cumulative_map[row, prv_x - 1: min(prv_x + 2, width - 1)]) + prv_x - 1
-    return output
-
-
-def update_seams(remaining_seams, current_seam):
-    """
-    Upcate seams after adding a new one
-    :param remaining_seams: remaining seams to traverse
-    :param current_seam: seam which was just added
-    :return: list of seams to traverse
-    """
-    output = []
-    for seam in remaining_seams:
-        seam[np.where(seam >= current_seam)] += 2
-        output.append(seam)
-    return output
-
-
 def rotate_image(image, ccw):
     """
     Rotate numpy array (image) by 90 degrees
@@ -97,47 +48,37 @@ def rotate_image(image, ccw):
 
 
 def find_horizontal_seam(energy_matrix):
-
     """
     Takes a img and returns the lowest energy vertical seam as a list of pixels (2-tuples).
     This implements the dynamic programming seam-find algorithm. For an m*n picture, this algorithm
     takes O(m*n) time
-    @im: a grayscale image
     """
+    cost = calc_cost_matrix(energy_matrix)
+    path = find_seam(cost, energy_matrix)
 
+    return path
+
+
+def find_seam(cost, energy_matrix):
+    """
+    Calculate optimal seam using cost_matrix and original energy matrix
+    :param cost: cost matrix
+    :param energy_matrix: energy matrix calculated by gradient filter (Sobel)
+    :return: optimal path to traverse the image.
+    """
+    min_val = None
+    start_point = None
+    path = []
     im_height, im_width = energy_matrix.shape
 
-    cost = np.zeros((im_height, im_width))
-
-    im_arr = np.copy(energy_matrix)
-
     for y in range(im_width):
-        cost[0, y] = im_arr[0, y]
-
-    for x in range(1, im_height):
-        for y in range(im_width):
-            if y == 0:
-                min_val = min(cost[x - 1, y], cost[x - 1, y + 1])
-            elif y < im_width - 2:
-                min_val = min(cost[x - 1, y], cost[x - 1, y + 1])
-                min_val = min(min_val, cost[x - 1, y - 1])
-            else:
-                min_val = min(cost[x - 1, y], cost[x - 1, y - 1])
-            cost[x, y] = im_arr[x, y] + min_val
-
-    min_val = 1e1000
-    path = []
-
-    for y in range(im_width):
-        if cost[im_height - 1, y] < min_val:
+        if not min_val or cost[im_height - 1, y] < min_val:
             min_val = cost[im_height - 1, y]
-            min_ptr = y
-
-    pos = (im_height - 1, min_ptr)
+            start_point = y
+    pos = (im_height - 1, start_point)
     path.append(pos)
-
     while pos[0] != 0:
-        val = cost[pos] - im_arr[pos]
+        val = cost[pos] - energy_matrix[pos]
         x, y = pos
         if y == 0:
             if val == cost[x - 1, y + 1]:
@@ -158,8 +99,30 @@ def find_horizontal_seam(energy_matrix):
                 pos = (x - 1, y - 1)
 
         path.append(pos)
-
     return path
+
+
+def calc_cost_matrix(energy_matrix):
+    """
+    Calculate cumulative cost matrix
+    :param energy_matrix: energy matrix calculated by gradient filter (Sobel)
+    :return: cumulative cost matrix
+    """
+    im_height, im_width = energy_matrix.shape
+    cost = np.zeros((im_height, im_width))
+    for y in range(im_width):
+        cost[0, y] = energy_matrix[0, y]
+    for x in range(1, im_height):
+        for y in range(im_width):
+            if y == 0:
+                min_val = min(cost[x - 1, y], cost[x - 1, y + 1])
+            elif y < im_width - 2:
+                min_val = min(cost[x - 1, y], cost[x - 1, y + 1])
+                min_val = min(min_val, cost[x - 1, y - 1])
+            else:
+                min_val = min(cost[x - 1, y], cost[x - 1, y - 1])
+            cost[x, y] = energy_matrix[x, y] + min_val
+    return cost
 
 
 class SeamCarver:
@@ -219,8 +182,8 @@ class SeamCarver:
         """
         for p in range(num_pixel):
             energy_matrix = self.gradient_filter()
-            alt_seam = find_horizontal_seam(energy_matrix)
-            output = self.delete_seam(alt_seam)
+            seam = find_horizontal_seam(energy_matrix)
+            output = self.delete_seam(seam)
             self.out_image = output
 
     def seams_insertion(self, num_pixel):
@@ -229,130 +192,58 @@ class SeamCarver:
         :param num_pixel: number of pixel columns to add
         """
 
-        temp_image = np.copy(self.out_image)
-        seams_record = []
-
         for dummy in range(num_pixel):
-            energy_map = self.calc_energy_map()
-            cumulative_map = cumulative_map_backward(energy_map)
-            seam_idx = find_seam(cumulative_map)
-            seams_record.append(seam_idx)
-            self.delete_seam_old(seam_idx)
+            energy_matrix = self.gradient_filter()
+            seam = find_horizontal_seam(energy_matrix)
+            new_image = self.add_vertical_seam(seam)
+            self.out_image = new_image
 
-        self.out_image = np.copy(temp_image)
-        n = len(seams_record)
-        for dummy in range(n):
-            seam = seams_record.pop(0)
-            self.add_seam(seam)
-            seams_record = update_seams(seams_record, seam)
+    def add_vertical_seam(self, path):
+        """
+        Adds the pixels in a vertical path from img
+        @img: an input img
+        @path: pixels to delete in a vertical path
+        """
 
-    def calc_energy_map(self):
-        """
-        Calculate energy map for the whole image for each color channel.  The energy of pixel (x, y) is
-        dx2(x, y) + dy2(x, y), where the square of the x-gradient dx2(x, y) = Rx(x, y)2 + Gx(x, y)2 + Bx(x, y)2,
-        and where the central differences Rx(x, y), Gx(x, y), and Bx(x, y) are the absolute value in differences of
-        red, green, and blue components between pixel (x + 1, y) and pixel (x − 1, y).
-        :return: Matrix m x n where m is height of the image and n is width. Each value at (x,y) corresponds to pixel
-        energy value.
-        """
-        b, g, r = cv2.split(self.out_image)
-        b_energy = np.absolute(cv2.Scharr(b, -1, 1, 0)) + np.absolute(cv2.Scharr(b, -1, 0, 1))
-        g_energy = np.absolute(cv2.Scharr(g, -1, 1, 0)) + np.absolute(cv2.Scharr(g, -1, 0, 1))
-        r_energy = np.absolute(cv2.Scharr(r, -1, 1, 0)) + np.absolute(cv2.Scharr(r, -1, 0, 1))
-        return b_energy + g_energy + r_energy
+        img_height, img_width, dim = self.out_image.shape
+
+        output = np.zeros((img_height, img_width + 1, dim))
+        path_set = set(path)
+        seen_set = set()
+        for x in range(img_height):
+            for y in range(img_width):
+                if (x, y) not in path_set and x not in seen_set:
+                    output[x, y] = self.out_image[x, y]
+                elif (x, y) in path_set and x not in seen_set:
+                    output[x, y] = self.out_image[x, y]
+                    seen_set.add(x)
+                    if y < img_width - 2:
+                        avg = np.mean([self.out_image[x, y], self.out_image[x, y + 1]], 0)
+                        output[x, y + 1] = avg
+                    else:
+                        output[x, y + 1] = np.mean([self.out_image[x, y], self.out_image[x, y - 1]], 0)
+                else:
+                    y_ = self.out_image[x, y]
+                    output[x, y + 1] = y_
+
+        return output
 
     def gradient_filter(self):
 
         """
-        Takes a grayscale img and retuns the Sobel operator on the image. Fast thanks to Scipy/Numpy. See slow_gradient_filter for
-        an implementation of what the Sobel operator is doing
-        @im: a grayscale image represented in floats
+        Takes a grayscale img and retuns the Sobel operator on the image. Fast thanks to Scipy/Numpy.
         """
         im_height, im_width, _ = self.out_image.shape
         sobel_arr = generic_gradient_magnitude(self.out_image, derivative=sobel)
         gradient_sum = np.sum(sobel_arr, axis=2)
         return gradient_sum
 
-    def cumulative_map_forward(self, energy_map):
-        """
-        Build accumulative cost matrix using dynamic programming
-        :param energy_map: Previously calculated energy map where each pixel is assigned energy
-        :return: Cumulative cost matrix.
-        """
-        matrix_x, matrix_y_left, matrix_y_right = self.calc_neighbor_matrix()
-
-        height, width = energy_map.shape
-        output = np.copy(energy_map)
-        for row in range(1, height):
-            for col in range(width):
-                e_up = output[row - 1, col] + matrix_x[row - 1, col]
-
-                if col == 0:
-                    e_right = output[row - 1, col + 1] + matrix_x[row - 1, col + 1] + matrix_y_right[row - 1, col + 1]
-                    output[row, col] = energy_map[row, col] + min(e_right, e_up)
-                elif col == width - 1:
-                    e_left = output[row - 1, col - 1] + matrix_x[row - 1, col - 1] + matrix_y_left[row - 1, col - 1]
-                    output[row, col] = energy_map[row, col] + min(e_left, e_up)
-                else:
-                    e_left = output[row - 1, col - 1] + matrix_x[row - 1, col - 1] + matrix_y_left[row - 1, col - 1]
-                    e_right = output[row - 1, col + 1] + matrix_x[row - 1, col + 1] + matrix_y_right[row - 1, col + 1]
-                    output[row, col] = energy_map[row, col] + min(e_left, e_right, e_up)
-        return output
-
-    def calc_neighbor_matrix(self):
-        """
-        Calculate neighbouring matrix for each color channel.
-        :return: Neighbouring matrices
-        """
-        b, g, r = cv2.split(self.out_image)
-        mat_x = filter_output(b, g, r, self.kernel_x)
-        mat_y_l = filter_output(b, g, r, self.kernel_y_left)
-        mar_y_r = filter_output(b, g, r, self.kernel_y_right)
-        return mat_x, mat_y_l, mar_y_r
-
     def delete_seam(self, seam_idx):
         height, width, dim = self.out_image.shape
-        output = np.zeros((height, width-1, dim))
+        output = np.zeros((height, width - 1, dim))
         for h, w in seam_idx:
             output[h] = np.delete(self.out_image[h], w, 0)
         return output
-
-    def delete_seam_old(self, seam_idx):
-        """
-        Delete seam from the image in order to reduce image dimensionality
-        :param seam_idx: List of pixels containing a seam to remove
-        """
-        m, n = self.out_image.shape[: 2]
-        output = np.zeros((m, n - 1, 3))
-        for row in range(m):
-            col = seam_idx[row]
-            output[row, :, 0] = np.delete(self.out_image[row, :, 0], [col])
-            output[row, :, 1] = np.delete(self.out_image[row, :, 1], [col])
-            output[row, :, 2] = np.delete(self.out_image[row, :, 2], [col])
-        self.out_image = np.copy(output)
-
-    def add_seam(self, seam_idx):
-        """
-        Add seam to enlarge the image
-        :param seam_idx: List of pixels containing a seam to duplicate
-        :return:
-        """
-        m, n = self.out_image.shape[: 2]
-        output = np.zeros((m, n + 1, 3))
-        for row in range(m):
-            col = seam_idx[row]
-            for ch in range(3):
-                if col == 0:
-                    p = np.average(self.out_image[row, col: col + 2, ch])
-                    output[row, col, ch] = self.out_image[row, col, ch]
-                    output[row, col + 1, ch] = p
-                    output[row, col + 1:, ch] = self.out_image[row, col:, ch]
-                else:
-                    p = np.average(self.out_image[row, col - 1: col + 1, ch])
-                    output[row, : col, ch] = self.out_image[row, : col, ch]
-                    output[row, col, ch] = p
-                    output[row, col + 1:, ch] = self.out_image[row, col:, ch]
-        self.out_image = np.copy(output)
 
     def save_result(self, filename):
         """

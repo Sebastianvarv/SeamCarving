@@ -153,12 +153,14 @@ class Gui(Frame):
         else:
             messagebox.showwarning("Oops", "Output dimensions must be integers!")
 
+
 def is_number(s):
-        try:
-            int(s)
-            return True
-        except ValueError:
-            return False
+    try:
+        int(s)
+        return True
+    except ValueError:
+        return False
+
 
 if __name__ == "__main__":
     root = Tk()
