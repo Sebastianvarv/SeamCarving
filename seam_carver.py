@@ -8,6 +8,10 @@ POS_MASK = 100000
 NEG_MASK = -100
 
 
+def rgb2gray(rgb):
+    return np.dot(rgb[..., :3], [0.299, 0.587, 0.114])
+
+
 def generate_mask(start_x, start_y, end_x, end_y, img, is_pos):
     width, height = img.size
     mask = np.ones((height, width))
@@ -234,9 +238,10 @@ class SeamCarver:
         Takes a grayscale img and retuns the Sobel operator on the image. Fast thanks to Scipy/Numpy.
         """
         im_height, im_width, _ = self.out_image.shape
-        sobel_arr = generic_gradient_magnitude(self.out_image, derivative=sobel)
-        gradient_sum = np.sum(sobel_arr, axis=2)
-        return gradient_sum
+        bw_image = rgb2gray(self.out_image)
+        sobel_arr = generic_gradient_magnitude(bw_image, derivative=sobel)
+        # gradient_sum = np.sum(sobel_arr, axis=1)
+        return sobel_arr
 
     def delete_seam(self, seam_idx):
         height, width, dim = self.out_image.shape
