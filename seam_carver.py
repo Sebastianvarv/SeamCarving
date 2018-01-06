@@ -50,6 +50,7 @@ def rotate_image(image, ccw):
                 output[:, height - 1 - row, c] = image[row, :, c]
     return output
 
+
 def rotate_mask(mask, ccw):
     """
     Rotate numpy array (mask) by 90 degrees
@@ -212,8 +213,8 @@ class SeamCarver:
             self.mask = rotate_mask(self.mask, 1)
             rotated = True
 
-	# remove seams that contain the object to remove
-        while len(np.where(self.mask[:,:] < 0)[0]) > 0:
+        # remove seams that contain the object to remove
+        while len(np.where(self.mask[:, :] < 0)[0]) > 0:
             energy_matrix = np.multiply(self.gradient_filter(), self.mask)
             seam = find_horizontal_seam(energy_matrix)
             self.out_image = self.delete_seam(seam)
@@ -224,11 +225,11 @@ class SeamCarver:
         else:
             num_pixels = self.in_height - self.out_image.shape[1]
 
-	# fill in the removed seams back
+        # fill in the removed seams back
         self.seams_insertion(num_pixels)
         if rotated:
             self.out_image = rotate_image(self.out_image, 0)
-	# resize the image according to the input dimensions
+        # resize the image according to the input dimensions
         self.seams_carving()
 
     def seams_removal(self, num_pixel):

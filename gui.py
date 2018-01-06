@@ -48,6 +48,12 @@ class Gui(Frame):
         list_box = Listbox(master)
         list_box.pack(side=RIGHT, anchor=N)
 
+        self.image_width_label = Label(list_box, text="Width: -")
+        self.image_width_label.pack(fill=X)
+
+        self.image_height_label = Label(list_box, text="Height: -")
+        self.image_height_label.pack(fill=X)
+
         remove_button = Radiobutton(list_box, text="Remove selection", variable=self.radio_value, value=1)
         remove_button.pack(fill=X)
 
@@ -97,6 +103,8 @@ class Gui(Frame):
 
             self.canvas.config(scrollregion=(0, 0, width, height))
             self.canvas.config(width=min(width, 1280), height=min(height, 768))
+            self.image_width_label.config(text='Width: ' + str(width) + "px")
+            self.image_height_label.config(text='Height: ' + str(height) + "px")
 
             self.tk_im = ImageTk.PhotoImage(self.im)
             self.canvas.create_image(0, 0, anchor="nw", image=self.tk_im)
