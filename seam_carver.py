@@ -12,7 +12,7 @@ def rgb2gray(rgb):
     return np.dot(rgb[..., :3], [0.299, 0.587, 0.114])
 
 
-def generate_mask(start_x, start_y, end_x, end_y, img, is_pos):
+def generate_mask(start_x, start_y, end_x, end_y, img, is_protect):
     width, height = img.size
     mask = np.ones((height, width))
 
@@ -22,7 +22,7 @@ def generate_mask(start_x, start_y, end_x, end_y, img, is_pos):
     if start_y > end_y:
         start_y, end_y = end_y, start_y
 
-    if is_pos:
+    if is_protect:
         mask[start_y:(end_y + 1), start_x:(end_x + 1)] *= POS_MASK
     else:
         mask[start_y:(end_y + 1), start_x:(end_x + 1)] *= NEG_MASK
@@ -48,6 +48,24 @@ def rotate_image(image, ccw):
         for c in range(ch):
             for row in range(height):
                 output[:, height - 1 - row, c] = image[row, :, c]
+    return output
+
+def rotate_mask(mask, ccw):
+    """
+    Rotate numpy array (mask) by 90 degrees
+    :param mask: mask of an object to rotate
+    :param ccw: flag to rotate counter-clock wise.
+    :return: image
+    """
+    height, width = mask.shape
+    output = np.zeros((width, height))
+    if ccw:
+        image_flip = np.fliplr(mask)
+        for row in range(height):
+            output[:, row] = image_flip[row, :]
+    else:
+        for row in range(height):
+            output[:, height - 1 - row] = image[row, :]
     return output
 
 
@@ -130,7 +148,7 @@ def calc_cost_matrix(energy_matrix):
 
 
 class SeamCarver:
-    def __init__(self, file_path, out_height, out_width, mask=None):
+    def __init__(self, file_path, out_height, out_width, mask):
         # initialize parameter
         self.file_path = file_path
         self.out_height = out_height
@@ -139,7 +157,7 @@ class SeamCarver:
 
         # read in image and store as np.float64 format
         self.in_image = cv2.imread(file_path).astype(np.float64)
-        self.in_height, self.in_width = self.in_image.shape[: 2]
+        self.in_height, self.in_width, _ = self.in_image.shape
 
         # keep tracking resulting image
         self.out_image = np.copy(self.in_image)
@@ -150,14 +168,20 @@ class SeamCarver:
         self.kernel_y_right = np.array([[0., 0., 0.], [1., 0., 0.], [0., -1., 0.]], dtype=np.float64)
 
         # starting program
-        self.seams_carving()
+        self.process_image()
+
+    def process_image(self):
+        if self.mask is not None:
+            self.object_removal()
+        else:
+            self.seams_carving()
 
     def seams_carving(self):
         """
         Process image vertically by adding or removing number of pixels iteratively, then rotate
-        the image 90 degrees and di the same for horizontal.
+        the image 90 degrees and do the same for horizontal.
         """
-
+        print("Resizing the image")
         # calculate number of rows and columns needed to be inserted or removed
         d_height, d_width = int(self.out_height - self.in_height), int(self.out_width - self.in_width)
 
@@ -178,6 +202,34 @@ class SeamCarver:
             self.out_image = rotate_image(self.out_image, 1)
             self.seams_insertion(d_height)
             self.out_image = rotate_image(self.out_image, 0)
+
+    def object_removal(self):
+        print("Removing an object")
+        object_height, object_width = self.mask.shape
+        rotated = False
+        if object_height < object_width:
+            self.out_image = rotate_image(self.out_image, 1)
+            self.mask = rotate_mask(self.mask, 1)
+            rotated = True
+
+	# remove seams that contain the object to remove
+        while len(np.where(self.mask[:,:] < 0)[0]) > 0:
+            energy_matrix = np.multiply(self.gradient_filter(), self.mask)
+            seam = find_horizontal_seam(energy_matrix)
+            self.out_image = self.delete_seam(seam)
+            self.mask = self.delete_seam_on_mask(seam)
+
+        if not rotated:
+            num_pixels = self.in_width - self.out_image.shape[1]
+        else:
+            num_pixels = self.in_height - self.out_image.shape[1]
+
+	# fill in the removed seams back
+        self.seams_insertion(num_pixels)
+        if rotated:
+            self.out_image = rotate_image(self.out_image, 0)
+	# resize the image according to the input dimensions
+        self.seams_carving()
 
     def seams_removal(self, num_pixel):
         """
@@ -233,13 +285,12 @@ class SeamCarver:
         return output
 
     def gradient_filter(self):
-
         """
         Takes a grayscale img and retuns the Sobel operator on the image. Fast thanks to Scipy/Numpy.
         """
         im_height, im_width, _ = self.out_image.shape
-        bw_image = rgb2gray(self.out_image)
-        sobel_arr = generic_gradient_magnitude(bw_image, derivative=sobel)
+        gray_image = rgb2gray(self.out_image)
+        sobel_arr = generic_gradient_magnitude(gray_image, derivative=sobel)
         # gradient_sum = np.sum(sobel_arr, axis=1)
         return sobel_arr
 
@@ -248,6 +299,13 @@ class SeamCarver:
         output = np.zeros((height, width - 1, dim))
         for h, w in seam_idx:
             output[h] = np.delete(self.out_image[h], w, 0)
+        return output
+
+    def delete_seam_on_mask(self, seam_idx):
+        height, width = self.mask.shape
+        output = np.zeros((height, width - 1))
+        for h, w in seam_idx:
+            output[h] = np.delete(self.mask[h], w, 0)
         return output
 
     def save_result(self, filename):

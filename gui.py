@@ -148,6 +148,8 @@ class Gui(Frame):
             carver = SeamCarver(self.img_path, int(height), int(width), mask)
             if output_filename == "":
                 output_filename = "output.jpg"
+            else:
+                output_filename += ".jpg"
             carver.save_result(output_filename)
             messagebox.showinfo("Done", "Image resizing complete, file saved in " + output_filename)
         else:
