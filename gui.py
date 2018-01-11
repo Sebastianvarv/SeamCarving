@@ -54,6 +54,9 @@ class Gui(Frame):
         self.image_height_label = Label(list_box, text="Height: -")
         self.image_height_label.pack(fill=X)
 
+        resize_button = Radiobutton(list_box, text="Resizing only", variable=self.radio_value, value=0)
+        resize_button.pack(fill=X)
+
         remove_button = Radiobutton(list_box, text="Remove selection", variable=self.radio_value, value=1)
         remove_button.pack(fill=X)
 
@@ -148,12 +151,11 @@ class Gui(Frame):
             width, height, option = int(width), int(height), int(option)
             mask = None
             if option == 1:  # Remove selection
-                mask = generate_mask(self.start_x, self.start_y, self.end_x, self.end_y, self.im, False)
+                mask = generate_mask(self.start_x, self.start_y, self.end_x, self.end_y, self.im, option)
             elif option == 2:  # Protect selection
-                mask = generate_mask(self.start_x, self.start_y, self.end_x, self.end_y, self.im, True)
-
+                mask = generate_mask(self.start_x, self.start_y, self.end_x, self.end_y, self.im, option)
             output_filename = self.out_file_name.get()
-            carver = SeamCarver(self.img_path, int(height), int(width), mask)
+            carver = SeamCarver(self.img_path, int(height), int(width), mask, option)
             if output_filename == "":
                 output_filename = "output.jpg"
             else:

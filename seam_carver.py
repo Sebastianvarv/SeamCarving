@@ -12,7 +12,7 @@ def rgb2gray(rgb):
     return np.dot(rgb[..., :3], [0.299, 0.587, 0.114])
 
 
-def generate_mask(start_x, start_y, end_x, end_y, img, is_protect):
+def generate_mask(start_x, start_y, end_x, end_y, img, option):
     width, height = img.size
     mask = np.ones((height, width))
 
@@ -22,10 +22,12 @@ def generate_mask(start_x, start_y, end_x, end_y, img, is_protect):
     if start_y > end_y:
         start_y, end_y = end_y, start_y
 
-    if is_protect:
+    if option == 2:
         mask[start_y:(end_y + 1), start_x:(end_x + 1)] *= POS_MASK
-    else:
+    elif option == 1:
         mask[start_y:(end_y + 1), start_x:(end_x + 1)] *= NEG_MASK
+    else:
+        print('Option to apply mask was passed, but the mask is None')
 
     return mask
 
@@ -149,12 +151,16 @@ def calc_cost_matrix(energy_matrix):
 
 
 class SeamCarver:
-    def __init__(self, file_path, out_height, out_width, mask):
+    def __init__(self, file_path, out_height, out_width, mask, option):
         # initialize parameter
         self.file_path = file_path
         self.out_height = out_height
         self.out_width = out_width
         self.mask = mask
+        # mode = 0 - resize only, no mask provided
+        # mode = 1 - remove masked object
+        # mode = 2 - protect mask object
+        self.mode = option
 
         # read in image and store as np.float64 format
         self.in_image = cv2.imread(file_path).astype(np.float64)
@@ -172,7 +178,7 @@ class SeamCarver:
         self.process_image()
 
     def process_image(self):
-        if self.mask is not None:
+        if self.mask is not None and self.mode == 1:
             self.object_removal()
         else:
             self.seams_carving()
@@ -182,7 +188,10 @@ class SeamCarver:
         Process image vertically by adding or removing number of pixels iteratively, then rotate
         the image 90 degrees and do the same for horizontal.
         """
-        print("Resizing the image")
+        if self.mode == 2:
+            print("Resizing the image with protection mask")
+        else:
+            print("Resizing the image")
         # calculate number of rows and columns needed to be inserted or removed
         d_height, d_width = int(self.out_height - self.in_height), int(self.out_width - self.in_width)
 
@@ -196,11 +205,15 @@ class SeamCarver:
         # remove row
         if d_height < 0:
             self.out_image = rotate_image(self.out_image, 1)
+            if self.mode == 2:
+                self.mask = rotate_mask(self.mask, 1)
             self.seams_removal(np.abs(d_height))
             self.out_image = rotate_image(self.out_image, 0)
         # insert row
         elif d_height > 0:
             self.out_image = rotate_image(self.out_image, 1)
+            if self.mode == 2:
+                self.mask = rotate_mask(self.mask, 1)
             self.seams_insertion(d_height)
             self.out_image = rotate_image(self.out_image, 0)
 
@@ -237,23 +250,33 @@ class SeamCarver:
         Calculate minimal energy seams and remove those seams from the image
         :param num_pixel: number of pixels (width) to remove
         """
-        for p in range(num_pixel):
-            energy_matrix = self.gradient_filter()
-            seam = find_horizontal_seam(energy_matrix)
-            output = self.delete_seam(seam)
-            self.out_image = output
+        if self.mode == 2:
+            for p in range(num_pixel):
+                energy_matrix = np.multiply(self.gradient_filter(), self.mask)
+                seam = find_horizontal_seam(energy_matrix)
+                self.out_image = self.delete_seam(seam)
+                self.mask = self.delete_seam_on_mask(seam)
+        else:
+            for p in range(num_pixel):
+                energy_matrix = self.gradient_filter()
+                seam = find_horizontal_seam(energy_matrix)
+                self.out_image = self.delete_seam(seam)
 
     def seams_insertion(self, num_pixel):
         """
         Calculate minimal energy seams and create new similar seams to enlarge the image
         :param num_pixel: number of pixel columns to add
         """
-
-        for dummy in range(num_pixel):
-            energy_matrix = self.gradient_filter()
-            seam = find_horizontal_seam(energy_matrix)
-            new_image = self.add_vertical_seam(seam)
-            self.out_image = new_image
+        if self.mode == 2:
+            for dummy in range(num_pixel):
+                energy_matrix = np.multiply(self.gradient_filter(), self.mask)
+                seam = find_horizontal_seam(energy_matrix)
+                self.out_image = self.add_vertical_seam(seam)
+        else:
+            for dummy in range(num_pixel):
+                energy_matrix = self.gradient_filter()
+                seam = find_horizontal_seam(energy_matrix)
+                self.out_image = self.add_vertical_seam(seam)
 
     def add_vertical_seam(self, path):
         """
